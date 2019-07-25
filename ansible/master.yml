@@ -1,0 +1,112 @@
+---
+- hosts: dev
+  remote_user: chris
+  become: true
+  vars_files:
+    - vars/main.yml
+  tasks:
+    - name: updates
+      apt: update_cache=true
+    - name: install
+      apt: name="{{item}}" update_cache=yes
+      with_items:
+        - openjdk-8-jdk
+        - xmlstarlet
+    - name: add repo
+      apt_key: url=https://pkg.jenkins.io/debian/jenkins.io.key state=present
+    - name: add repo
+      apt_repository:
+        repo: deb http://pkg.jenkins.io/debian-stable binary/
+        state: present
+    - name: install
+      apt: name=jenkins state=present update_cache=yes
+    - name: read admin passwd
+      shell: cat /var/lib/jenkins/secrets/initialAdminPassword
+      retries: 3
+      delay: 3
+      register: adminpwd
+      until: adminpwd.stdout_lines|length > 0
+    - name: jvm args
+      lineinfile: path=/etc/default/jenkins regexp='^#JAVA_ARGS=' line='JENKINS_JAVA_OPTIONS="-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false"'
+      notify: restart jenkins
+    - name: set slave agent port
+      shell: xmlstarlet ed -u "//slaveAgentPort" -v "{{jenkins_slave_port}}" /var/lib/jenkins/config.xml > /tmp/jenkins_config.xml
+    - name: move config.xml
+      shell: mv /tmp/jenkins_config.xml /var/lib/jenkins/config.xml
+    - name: change ownership
+      notify: restart jenkins
+
+    - name: unlock and add admin user
+      jenkins_script:
+       script: |
+          import jenkins.model.*
+          import hudson.security.*
+          def instance = Jenkins.getInstance()
+          def hudsonRealm = new HudsonPrivateSecurityRealm(false)
+          hudsonRealm.createAccount('jenkins', 'jenkins')
+          instance.setSecurityRealm(hudsonRealm)
+          def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+          strategy.setAllowAnonymousRead(false)
+          instance.setAuthorizationStrategy(strategy)
+          instance.save()
+       user: admin
+       password: "{{adminpwd.stdout}}"
+      register: script_out
+      notify: restart jenkins
+      # retries: 3
+      # delay: 3
+    - name: complete setup wizard
+      jenkins_script:
+       script: |
+          import static jenkins.model.Jenkins.instance as jenkins
+          import jenkins.install.InstallState
+          if (!jenkins.installState.isSetupComplete()) {
+            InstallState.INITIAL_SETUP_COMPLETED.initializeState()
+          }
+       user: admin
+       password: "{{ adminpwd.stdout }}"
+
+
+    - name: Download current plugin updates from Jenkins update site.
+      get_url:
+        url: "{{ jenkins_updates_url }}/update-center.json"
+        dest: "{{ jenkins_home }}/updates/default.json"
+        owner: jenkins
+        group: jenkins
+        mode: 0440
+      changed_when: false
+      register: get_result
+      until: get_result is success
+      retries: 3
+      delay: 2
+    - name: Remove first and last line from json file.
+      replace:
+        path: "{{ jenkins_home }}/updates/default.json"
+        regexp: "1d;$d"
+
+    - name: Install Jenkins plugins using password.
+      jenkins_plugin:
+        name: "{{ item }}"
+        jenkins_home: "{{ jenkins_home }}"
+        url_username: "{{ jenkins_admin_username }}"
+        url_password: "{{ jenkins_admin_password }}"
+        state: "{{ jenkins_plugins_state }}"
+        timeout: "{{ jenkins_plugin_timeout }}"
+        updates_expiration: "{{ jenkins_plugin_updates_expiration }}"
+        updates_url: "{{ jenkins_updates_url }}"
+        url: "http://{{ jenkins_hostname }}:{{ jenkins_http_port }}{{ jenkins_url_prefix }}"
+        with_dependencies: "{{ jenkins_plugins_install_dependencies }}"
+      with_items: "{{ jenkins_plugins }}"
+      when: jenkins_admin_password != ""
+      notify: restart jenkins
+      tags: ['skip_ansible_lint']
+      register: plugin_result
+      until: plugin_result is success
+      retries: 3
+      delay: 2
+
+
+  
+  handlers:
+    - name: restart jenkins
+      service: name=jenkins state=restarted
