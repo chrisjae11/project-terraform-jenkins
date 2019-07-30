@@ -1,0 +1,38 @@
+---
+- hosts: stage
+  become: true
+  vars:
+    slave_user: jenkins
+    slave_password: jenkins
+    jenkins_version: 2.8
+    directories:
+      - file: slave.conf
+        path: /home/jenkins/jenkins-slave/config
+      - file: slave-service.sh
+        path: /etc/init.d/jenkins-slave
+  tasks:
+    - name: update
+      apt: update_cache=true
+    - name: repo
+      apt_repository: repo='ppa:openjdk-r/ppa'
+    - name: install
+      apt: name=openjdk-8-jdk update_cache=true
+    - name: install packages
+      apt: name="{{item}}" state=latest update_cache=true
+      loop: [ 'apt-transport-https', 'ca-certificates', 'curl', 'software-properties-common', 'python3-pip' ]
+    - name: docker gpg key
+      apt_key: url=https://download.docker.com/linux/ubuntu/gpg state=present
+    - name: docker repos
+      apt_repository:
+        repo:  deb https://download.docker.com/linux/ubuntu bionic stable
+        state: present
+    - name: install docker-ce
+      apt: name=docker-ce update_cache=true state=latest
+    - name: usermod
+      user: name=ubuntu group=docker append=yes
+
+    - name: user ubuntu
+      user: >
+        name=ubuntu create_home=true home=/home/ubuntu shell=/bin/bash
+        password={{ slave_password | password_hash('sha512')}}
+        group=docker append=true

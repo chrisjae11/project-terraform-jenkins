@@ -34,18 +34,13 @@
       "type": "shell",
       "script": "../scripts/init.sh",
       "execute_command": "sudo -E -S sh '{{ .Path }}'"
-
-    }
-  ],
- "provisioners": [
+    },
     {
-      "type": "ansible",
+      "type": "ansible-local",
       "playbook_file": "../ansible/stage.yml",
-      "extra_arguments": "-vvv",
-      "user": "ubuntu"
+      "playbook_dir": "../ansible/",
+      "extra_arguments": "-vvv"
     }
   ]
-
-
 
 }

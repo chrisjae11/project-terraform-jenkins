@@ -1,2 +1,5 @@
 [dev]
 tera1
+
+[stage]
+jdk2

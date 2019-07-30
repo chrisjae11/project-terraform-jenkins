@@ -1,5 +1,5 @@
-resource "aws_security_group" "jenkins_security_group" {
-  name        = "jenkins-securitygroup"
+resource "aws_security_group" "jenkins_master_sg" {
+  name        = "jenkins-master"
   description = "securitygroup for jenkins"
   vpc_id      = "${aws_vpc.main.id}"
 
@@ -24,6 +24,42 @@ resource "aws_security_group" "jenkins_security_group" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  tags = {
+    Name = "jenkins_master_sg"
+  }
+}
+
+
+resource "aws_security_group" "jenkins_slaves_sg" {
+  name        = "jenkins_slaves_sg"
+  description = "allow master jenkins"
+  vpc_id      = "${aws_vpc.main.id}"
+
+  ingress {
+    from_port       = "22"
+    to_port         = "22"
+    protocol        = "tcp"
+    security_groups = ["${aws_security_group.jenkins_mastger_sg.idj}"]
+  }
+
+  egress {
+    from_port   = "0"
+    to_port     = "0"
+    protocol    = "-1"
+    cidr_blocks = "0.0.0.0/0"
+  }
+  tags {
+    Name = "jenkins_slaves_sg"
+  }
+
+}
+
+resource "aws_security_group" "elb_jenkins_sg" {
+  name        = "elb_jenkins_sg"
+  description = "allow https"
+  vpc_id      = "${aws_vpc.main.id}"
+
+
   ingress {
     from_port   = 443
     to_port     = 443
@@ -31,10 +67,14 @@ resource "aws_security_group" "jenkins_security_group" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  ingress {
-    from_port   = 49187
-    to_port     = 49187
-    protocol    = "tcp"
+  egress {
+    from_port   = "0"
+    to_port     = "0"
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "elb_jenkins_sg"
   }
 }

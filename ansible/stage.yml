@@ -1,5 +1,5 @@
 ---
-- hosts: dev
+- hosts: localhost
   # remote_user: chris
   become: true
   vars_files:
@@ -23,19 +23,13 @@
     - name: read admin passwd
       shell: cat /var/lib/jenkins/secrets/initialAdminPassword
       retries: 3
-      delay: 10
+      delay: 3
       register: adminpwd
       until: adminpwd.stdout_lines|length > 0
+    - debug: msg="***************** {{adminpwd.stdout}}"
     - name: jvm args
       lineinfile: path=/etc/default/jenkins regexp='^#JAVA_ARGS=' line='JENKINS_JAVA_OPTIONS="-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false"'
       notify: restart jenkins
-    - name: set slave agent port
-      shell: xmlstarlet ed -u "//slaveAgentPort" -v "{{jenkins_slave_port}}" /var/lib/jenkins/config.xml > /tmp/jenkins_config.xml
-    - name: move config.xml
-      shell: mv /tmp/jenkins_config.xml /var/lib/jenkins/config.xml
-    - name: change ownership
-      notify: restart jenkins
-
     - name: unlock and add admin user
       jenkins_script:
        script: |
@@ -53,8 +47,8 @@
        password: "{{adminpwd.stdout}}"
       register: script_out
       notify: restart jenkins
-      # retries: 3
-      # delay: 3
+      retries: 3
+    #   delay: 3
     - name: complete setup wizard
       jenkins_script:
        script: |
